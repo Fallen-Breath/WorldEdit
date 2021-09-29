@@ -19,9 +19,12 @@
 
 package com.sk89q.worldedit.fabric.mixin;
 
+import com.sk89q.worldedit.fabric.FabricWorldEdit;
 import com.sk89q.worldedit.fabric.internal.ExtendedPlayerEntity;
 import net.minecraft.network.packet.c2s.play.ClientSettingsC2SPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -36,6 +39,18 @@ public abstract class MixinServerPlayerEntity implements ExtendedPlayerEntity {
     public void setClientSettings(ClientSettingsC2SPacket clientSettingsC2SPacket,
                                   CallbackInfo callbackInfo) {
         this.language = ((AccessorClientSettingsC2SPacket) clientSettingsC2SPacket).getLanguage();
+    }
+
+    @Inject(method = "swingHand", at = @At(value = "HEAD"))
+    public void onSwing(Hand hand, @SuppressWarnings("unused") CallbackInfo callbackInfo) {
+        if (hand == Hand.MAIN_HAND) {
+            ServerPlayerEntity player = (ServerPlayerEntity)(Object)this;
+            float reach = player.isCreative() ? 5.0F : 4.5F;
+            HitResult hitResult = player.rayTrace(reach, 1.0F, false);
+            if (hitResult.getType() == HitResult.Type.MISS) {
+                FabricWorldEdit.inst.onLeftClickAir(player);
+            }
+        }
     }
 
     @Override
