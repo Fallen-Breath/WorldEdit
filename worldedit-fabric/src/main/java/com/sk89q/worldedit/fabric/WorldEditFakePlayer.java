@@ -20,19 +20,23 @@
 package com.sk89q.worldedit.fabric;
 
 import com.mojang.authlib.GameProfile;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.network.ServerPlayerInteractionManager;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.stat.Stat;
 import net.minecraft.text.Text;
+import net.minecraft.world.dimension.DimensionType;
 
+import javax.annotation.Nullable;
 import java.util.UUID;
 
 public class WorldEditFakePlayer extends ServerPlayerEntity {
     private static final GameProfile FAKE_WORLDEDIT_PROFILE = new GameProfile(UUID.nameUUIDFromBytes("worldedit".getBytes()), "[WorldEdit]");
 
     public WorldEditFakePlayer(ServerWorld world) {
-        super(world.getServer(), world, FAKE_WORLDEDIT_PROFILE);
+        super(world.getServer(), world, FAKE_WORLDEDIT_PROFILE, new ServerPlayerInteractionManager(world));
     }
 
     @Override
@@ -48,8 +52,17 @@ public class WorldEditFakePlayer extends ServerPlayerEntity {
     }
 
     @Override
-    public void sendMessage(Text message, boolean actionBar) {
-        super.sendMessage(message, actionBar);
+    public void sendMessage(Text component) {
+    }
+
+    @Override
+    public void addChatMessage(Text component, boolean opt) {
+    }
+
+    @Nullable
+    @Override
+    public Entity changeDimension(DimensionType dimensionType) {
+        return this;
     }
 
     @Override

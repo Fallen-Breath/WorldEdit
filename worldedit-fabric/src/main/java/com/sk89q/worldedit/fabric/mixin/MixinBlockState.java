@@ -19,18 +19,22 @@
 
 package com.sk89q.worldedit.fabric.mixin;
 
-import net.minecraft.world.SaveProperties;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.level.LevelProperties;
+import com.sk89q.worldedit.fabric.internal.OnBlockAddedHelper;
+import net.minecraft.block.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Mutable;
-import org.spongepowered.asm.mixin.gen.Accessor;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(LevelProperties.class)
-public interface AccessorLevelProperties extends SaveProperties {
+@Mixin(BlockState.class)
+public abstract class MixinBlockState {
 
-    @Accessor
-    @Mutable
-    void setGeneratorOptions(GeneratorOptions options);
+    @Inject(method = "onBlockAdded", at = @At("HEAD"), cancellable = true)
+    private void setBlockStateHook(CallbackInfo ci) {
+        if (OnBlockAddedHelper.DISABLED_FLAG.get()) {
+            OnBlockAddedHelper.DISABLED_FLAG.set(false);
+            ci.cancel();
+        }
+    }
 
 }

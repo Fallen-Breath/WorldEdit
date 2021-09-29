@@ -44,20 +44,21 @@ import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.world.block.BlockTypes;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.block.Block;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.MessageType;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.LiteralText;
-import net.minecraft.text.MutableText;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
+import net.minecraft.util.PacketByteBuf;
 import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.UUID;
@@ -101,8 +102,8 @@ public class FabricPlayer extends AbstractPlayerActor {
         return new Location(
                 FabricWorldEdit.inst.getWorld(this.player.world),
                 position,
-                this.player.getYaw(),
-                this.player.getPitch());
+                this.player.yaw,
+                this.player.pitch);
     }
 
     @Override
@@ -126,7 +127,7 @@ public class FabricPlayer extends AbstractPlayerActor {
 
     @Override
     public void giveItem(BaseItemStack itemStack) {
-        this.player.getInventory().insertStack(FabricAdapter.adapt(itemStack));
+        this.player.inventory.insertStack(FabricAdapter.adapt(itemStack));
     }
 
     @Override
@@ -152,7 +153,7 @@ public class FabricPlayer extends AbstractPlayerActor {
     @Deprecated
     public void printRaw(String msg) {
         for (String part : msg.split("\n")) {
-            this.player.sendMessage(new LiteralText(part), MessageType.SYSTEM, Util.NIL_UUID);
+            this.player.sendMessage(new LiteralText(part));
         }
     }
 
@@ -176,14 +177,14 @@ public class FabricPlayer extends AbstractPlayerActor {
 
     @Override
     public void print(Component component) {
-        this.player.sendMessage(net.minecraft.text.Text.Serializer.fromJson(GsonComponentSerializer.INSTANCE.serialize(WorldEditText.format(component, getLocale()))), false);
+        this.player.sendMessage(net.minecraft.text.Text.Serializer.fromJson(GsonComponentSerializer.INSTANCE.serialize(WorldEditText.format(component, getLocale()))));
     }
 
     private void sendColorized(String msg, Formatting formatting) {
         for (String part : msg.split("\n")) {
-            MutableText component = new LiteralText(part)
-                .styled(style -> style.withColor(formatting));
-            this.player.sendMessage(component, false);
+            LiteralText component = new LiteralText(part);
+            component.formatted(formatting);
+            this.player.sendMessage(component);
         }
     }
 
@@ -216,13 +217,13 @@ public class FabricPlayer extends AbstractPlayerActor {
 
     @Override
     public boolean isAllowedToFly() {
-        return player.getAbilities().allowFlying;
+        return player.abilities.allowFlying;
     }
 
     @Override
     public void setFlying(boolean flying) {
-        if (player.getAbilities().flying != flying) {
-            player.getAbilities().flying = flying;
+        if (player.abilities.flying != flying) {
+            player.abilities.flying = flying;
             player.sendAbilitiesUpdate();
         }
     }
@@ -238,13 +239,19 @@ public class FabricPlayer extends AbstractPlayerActor {
             final BlockUpdateS2CPacket packetOut = new BlockUpdateS2CPacket(((FabricWorld) world).getWorld(), loc);
             player.networkHandler.sendPacket(packetOut);
         } else {
-            final BlockUpdateS2CPacket packetOut = new BlockUpdateS2CPacket(
-                loc,
-                FabricAdapter.adapt(block.toImmutableState())
-            );
+            final BlockUpdateS2CPacket packetOut = new BlockUpdateS2CPacket();
+            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+            buf.writeBlockPos(loc);
+            buf.writeVarInt(Block.getRawIdFromState(FabricAdapter.adapt(block.toImmutableState())));
+            try {
+                packetOut.read(buf);
+            } catch (IOException e) {
+                return;
+            }
             player.networkHandler.sendPacket(packetOut);
             if (block instanceof BaseBlock && block.getBlockType().equals(BlockTypes.STRUCTURE_BLOCK)) {
-                final CompoundTag nbtData = ((BaseBlock) block).getNbtData();
+                final BaseBlock baseBlock = (BaseBlock) block;
+                final CompoundTag nbtData = baseBlock.getNbtData();
                 if (nbtData != null) {
                     player.networkHandler.sendPacket(new BlockEntityUpdateS2CPacket(
                             new BlockPos(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ()),

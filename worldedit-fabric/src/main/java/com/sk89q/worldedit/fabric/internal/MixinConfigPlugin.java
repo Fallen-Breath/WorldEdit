@@ -47,20 +47,20 @@ public class MixinConfigPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        if (mixinClassName.equals("com.sk89q.worldedit.fabric.mixin.MixinWorldChunkSetBlockHook")) {
-            List<ModContainer> conflictingContainers = Stream.of("carpet", "quickcarpet")
-                .map(FabricLoader.getInstance()::getModContainer)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .collect(Collectors.toList());
-            if (!conflictingContainers.isEmpty()) {
-                List<String> conflictingIds = conflictingContainers.stream()
-                    .map(mc -> mc.getMetadata().getId())
-                    .collect(Collectors.toList());
-                LOGGER.warn("{} detected, disabling UPDATE mixin {}", conflictingIds, mixinClassName);
-            }
-            return conflictingContainers.isEmpty();
-        }
+//        if (mixinClassName.equals("com.sk89q.worldedit.fabric.mixin.MixinWorldChunkSetBlockHook")) {
+//            List<ModContainer> conflictingContainers = Stream.of("carpet", "quickcarpet")
+//                .map(FabricLoader.getInstance()::getModContainer)
+//                .filter(Optional::isPresent)
+//                .map(Optional::get)
+//                .collect(Collectors.toList());
+//            if (!conflictingContainers.isEmpty()) {
+//                List<String> conflictingIds = conflictingContainers.stream()
+//                    .map(mc -> mc.getMetadata().getId())
+//                    .collect(Collectors.toList());
+//                LOGGER.warn("{} detected, disabling UPDATE mixin {}", conflictingIds, mixinClassName);
+//            }
+//            return conflictingContainers.isEmpty();
+//        }
         return true;
     }
 

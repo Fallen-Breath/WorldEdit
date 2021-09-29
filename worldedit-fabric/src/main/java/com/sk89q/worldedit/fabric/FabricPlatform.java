@@ -21,24 +21,15 @@ package com.sk89q.worldedit.fabric;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
-import com.sk89q.worldedit.command.util.PermissionCondition;
 import com.sk89q.worldedit.entity.Player;
-import com.sk89q.worldedit.extension.platform.AbstractPlatform;
-import com.sk89q.worldedit.extension.platform.Actor;
-import com.sk89q.worldedit.extension.platform.Capability;
-import com.sk89q.worldedit.extension.platform.MultiUserPlatform;
-import com.sk89q.worldedit.extension.platform.Preference;
-import com.sk89q.worldedit.extension.platform.Watchdog;
+import com.sk89q.worldedit.extension.platform.*;
 import com.sk89q.worldedit.fabric.internal.ExtendedChunk;
 import com.sk89q.worldedit.util.SideEffect;
 import com.sk89q.worldedit.util.lifecycle.Lifecycled;
-import com.sk89q.worldedit.util.lifecycle.SimpleLifecycled;
 import com.sk89q.worldedit.world.DataFixer;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.registry.Registries;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.SharedConstants;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.PlayerManager;
 import net.minecraft.server.dedicated.MinecraftDedicatedServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -46,22 +37,11 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.registry.Registry;
 import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.level.ServerWorldProperties;
-import org.enginehub.piston.Command;
 import org.enginehub.piston.CommandManager;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Function;
 import javax.annotation.Nullable;
-
-import static java.util.stream.Collectors.toList;
+import java.util.*;
+import java.util.function.Function;
 
 class FabricPlatform extends AbstractPlatform implements MultiUserPlatform {
 
@@ -151,7 +131,7 @@ class FabricPlatform extends AbstractPlatform implements MultiUserPlatform {
             return world;
         } else {
             for (ServerWorld ws : FabricWorldEdit.LIFECYCLED_SERVER.valueOrThrow().getWorlds()) {
-                if (((ServerWorldProperties) ws.getLevelProperties()).getLevelName().equals(world.getName())) {
+                if (ws.getLevelProperties().getLevelName().equals(world.getName())) {
                     return new FabricWorld(ws);
                 }
             }

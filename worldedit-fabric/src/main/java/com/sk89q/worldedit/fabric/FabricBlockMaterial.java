@@ -85,7 +85,7 @@ public class FabricBlockMaterial extends PassthroughBlockMaterial {
 
     @Override
     public boolean isToolRequired() {
-        return block.isToolRequired();
+        return !delegate.canBreakByHand();
     }
 
     @Override

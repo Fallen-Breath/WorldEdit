@@ -49,11 +49,10 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
 
+import javax.annotation.Nullable;
 import java.util.Comparator;
 import java.util.Map;
-import java.util.Objects;
 import java.util.TreeMap;
-import javax.annotation.Nullable;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -83,17 +82,11 @@ public final class FabricAdapter {
     }
 
     public static Biome adapt(BiomeType biomeType) {
-        return FabricWorldEdit.LIFECYCLED_SERVER.valueOrThrow()
-            .getRegistryManager()
-            .get(Registry.BIOME_KEY)
-            .get(new Identifier(biomeType.getId()));
+        return Registry.BIOME.get(new Identifier(biomeType.getId()));
     }
 
     public static BiomeType adapt(Biome biome) {
-        Identifier id = FabricWorldEdit.LIFECYCLED_SERVER.valueOrThrow().getRegistryManager()
-            .get(Registry.BIOME_KEY).getId(biome);
-        Objects.requireNonNull(id, "biome is not registered");
-        return BiomeTypes.get(id.toString());
+        return BiomeTypes.get(Registry.BIOME.getId(biome).toString());
     }
 
     public static Vector3 adapt(Vec3d vector) {
@@ -203,7 +196,7 @@ public final class FabricAdapter {
     }
 
     public static ItemStack adapt(BaseItemStack baseItemStack) {
-        net.minecraft.nbt.NbtCompound fabricCompound = null;
+        net.minecraft.nbt.CompoundTag fabricCompound = null;
         if (baseItemStack.getNbtData() != null) {
             fabricCompound = NBTConverter.toNative(baseItemStack.getNbtData());
         }
@@ -213,7 +206,7 @@ public final class FabricAdapter {
     }
 
     public static BaseItemStack adapt(ItemStack itemStack) {
-        CompoundTag tag = NBTConverter.fromNative(itemStack.writeNbt(new net.minecraft.nbt.NbtCompound()));
+        CompoundTag tag = NBTConverter.fromNative(itemStack.toTag(new net.minecraft.nbt.CompoundTag()));
         if (tag.getValue().isEmpty()) {
             tag = null;
         } else {

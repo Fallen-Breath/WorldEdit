@@ -22,37 +22,31 @@ package com.sk89q.worldedit.fabric;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.common.collect.Streams;
-import com.google.common.util.concurrent.Futures;
-import com.mojang.serialization.Dynamic;
+import com.google.common.io.Files;
 import com.sk89q.jnbt.CompoundTag;
 import com.sk89q.worldedit.EditSession;
+import com.sk89q.worldedit.MaxChangedBlocksException;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.blocks.BaseItem;
 import com.sk89q.worldedit.blocks.BaseItemStack;
 import com.sk89q.worldedit.entity.BaseEntity;
 import com.sk89q.worldedit.entity.Entity;
-import com.sk89q.worldedit.extent.Extent;
-import com.sk89q.worldedit.fabric.internal.ExtendedMinecraftServer;
 import com.sk89q.worldedit.fabric.internal.FabricWorldNativeAccess;
 import com.sk89q.worldedit.fabric.internal.NBTConverter;
-import com.sk89q.worldedit.fabric.mixin.AccessorLevelProperties;
 import com.sk89q.worldedit.fabric.mixin.AccessorServerChunkManager;
 import com.sk89q.worldedit.internal.Constants;
 import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.Vector3;
+import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.util.Direction;
 import com.sk89q.worldedit.util.Location;
 import com.sk89q.worldedit.util.SideEffect;
 import com.sk89q.worldedit.util.SideEffectSet;
 import com.sk89q.worldedit.util.TreeGenerator.TreeType;
-import com.sk89q.worldedit.util.io.file.SafeFiles;
 import com.sk89q.worldedit.world.AbstractWorld;
-import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BaseBlock;
 import com.sk89q.worldedit.world.block.BlockState;
@@ -65,57 +59,41 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemUsageContext;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.WorldGenerationProgressListener;
 import net.minecraft.server.world.ServerChunkManager;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Clearable;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.Util;
-import net.minecraft.util.dynamic.RegistryOps;
-import net.minecraft.util.dynamic.RegistryReadingOps;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.registry.Registry;
-import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
-import net.minecraft.world.WorldProperties;
-import net.minecraft.world.biome.source.BiomeAccessType;
+import net.minecraft.world.WorldSaveHandler;
+import net.minecraft.world.biome.DefaultBiomeFeatures;
 import net.minecraft.world.biome.source.BiomeArray;
-import net.minecraft.world.biome.source.HorizontalVoronoiBiomeAccessType;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkManager;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.dimension.DimensionOptions;
-import net.minecraft.world.gen.GeneratorOptions;
+import net.minecraft.world.gen.feature.BranchedTreeFeatureConfig;
 import net.minecraft.world.gen.feature.ConfiguredFeature;
-import net.minecraft.world.gen.feature.ConfiguredFeatures;
-import net.minecraft.world.level.ServerWorldProperties;
-import net.minecraft.world.level.storage.LevelStorage;
+import net.minecraft.world.gen.feature.Feature;
+import net.minecraft.world.gen.feature.OakTreeFeature;
+import net.minecraft.world.level.LevelProperties;
 
+import javax.annotation.Nullable;
+import java.io.File;
 import java.lang.ref.WeakReference;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
-import javax.annotation.Nullable;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -126,13 +104,6 @@ import static com.google.common.base.Preconditions.checkState;
 public class FabricWorld extends AbstractWorld {
 
     private static final Random random = new Random();
-
-    private static Identifier getDimensionRegistryKey(World world) {
-        return Objects.requireNonNull(world.getServer(), "server cannot be null")
-            .getRegistryManager()
-            .get(Registry.DIMENSION_TYPE_KEY)
-            .getId(world.getDimension());
-    }
 
     private final WeakReference<World> worldRef;
     private final FabricWorldNativeAccess worldNativeAccess;
@@ -165,21 +136,23 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public String getName() {
-        WorldProperties levelProperties = getWorld().getLevelProperties();
-        return ((ServerWorldProperties) levelProperties).getLevelName();
+        return getWorld().getLevelProperties().getLevelName();
     }
 
     @Override
     public String getId() {
-        return getName() + "_" + getDimensionRegistryKey(getWorld());
+        return getWorld().getLevelProperties().getLevelName()
+                .replace(" ", "_").toLowerCase(Locale.ROOT)
+                + getWorld().dimension.getType().getSuffix();
     }
 
     @Override
     public Path getStoragePath() {
         final World world = getWorld();
-        MinecraftServer server = world.getServer();
-        checkState(server instanceof ExtendedMinecraftServer, "Need a server world");
-        return ((ExtendedMinecraftServer) server).getStoragePath(world);
+        if (world instanceof ServerWorld) {
+            return ((ServerWorld) world).getSaveHandler().getWorldDir().toPath();
+        }
+        return null;
     }
 
     @Override
@@ -217,8 +190,7 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public boolean fullySupports3DBiomes() {
-        BiomeAccessType biomeAccessType = getWorld().getDimension().getBiomeAccessType();
-        return !(biomeAccessType instanceof HorizontalVoronoiBiomeAccessType);
+        return false;
     }
 
     @Override
@@ -302,152 +274,43 @@ public class FabricWorld extends AbstractWorld {
     }
 
     @Override
-    public boolean regenerate(Region region, Extent extent, RegenOptions options) {
+    public boolean regenerate(Region region, EditSession editSession) {
         // Don't even try to regen if it's going to fail.
         ChunkManager provider = getWorld().getChunkManager();
         if (!(provider instanceof ServerChunkManager)) {
             return false;
         }
 
+        File saveFolder = Files.createTempDir();
+        // register this just in case something goes wrong
+        // normally it should be deleted at the end of this method
+        saveFolder.deleteOnExit();
         try {
-            doRegen(region, extent, options);
-        } catch (Exception e) {
-            throw new IllegalStateException("Regen failed", e);
+            ServerWorld originalWorld = (ServerWorld) getWorld();
+
+            MinecraftServer server = originalWorld.getServer();
+            WorldSaveHandler saveHandler = new WorldSaveHandler(saveFolder, originalWorld.getSaveHandler().getWorldDir().getName(), server, server.getDataFixer());
+            World freshWorld = new ServerWorld(server, server.getWorkerExecutor(), saveHandler, originalWorld.getLevelProperties(),
+                    originalWorld.dimension.getType(), originalWorld.getProfiler(), new NoOpChunkStatusListener());
+
+            // Pre-gen all the chunks
+            // We need to also pull one more chunk in every direction
+            CuboidRegion expandedPreGen = new CuboidRegion(region.getMinimumPoint().subtract(16, 0, 16), region.getMaximumPoint().add(16, 0, 16));
+            for (BlockVector2 chunk : expandedPreGen.getChunks()) {
+                freshWorld.getChunk(chunk.getBlockX(), chunk.getBlockZ());
+            }
+
+            FabricWorld from = new FabricWorld(freshWorld);
+            for (BlockVector3 vec : region) {
+                editSession.setBlock(vec, from.getFullBlock(vec));
+            }
+        } catch (MaxChangedBlocksException e) {
+            throw new RuntimeException(e);
+        } finally {
+            saveFolder.delete();
         }
 
         return true;
-    }
-
-    private void doRegen(Region region, Extent extent, RegenOptions options) throws Exception {
-        Path tempDir = Files.createTempDirectory("WorldEditWorldGen");
-        LevelStorage levelStorage = LevelStorage.create(tempDir);
-        try (LevelStorage.Session session = levelStorage.createSession("WorldEditTempGen")) {
-            ServerWorld originalWorld = (ServerWorld) getWorld();
-            AccessorLevelProperties levelProperties = (AccessorLevelProperties)
-                originalWorld.getLevelProperties();
-            GeneratorOptions originalOpts = levelProperties.getGeneratorOptions();
-
-            long seed = options.getSeed().orElse(originalWorld.getSeed());
-            GeneratorOptions newOpts = options.getSeed().isPresent()
-                ? replaceSeed(originalWorld, seed, originalOpts)
-                : originalOpts;
-
-            levelProperties.setGeneratorOptions(newOpts);
-            RegistryKey<World> worldRegKey = originalWorld.getRegistryKey();
-            DimensionOptions dimGenOpts = newOpts.getDimensions().get(worldRegKey.getValue());
-            checkNotNull(dimGenOpts, "No DimensionOptions for %s", worldRegKey);
-            try (ServerWorld serverWorld = new ServerWorld(
-                originalWorld.getServer(), Util.getMainWorkerExecutor(), session,
-                ((ServerWorldProperties) originalWorld.getLevelProperties()),
-                worldRegKey,
-                originalWorld.getDimension(),
-                new WorldEditGenListener(),
-                dimGenOpts.getChunkGenerator(),
-                originalWorld.isDebugWorld(),
-                seed,
-                // No spawners are needed for this world.
-                ImmutableList.of(),
-                // This controls ticking, we don't need it so set it to false.
-                false
-            )) {
-                regenForWorld(region, extent, serverWorld, options);
-
-                // drive the server executor until all tasks are popped off
-                while (originalWorld.getServer().runTask()) {
-                    Thread.yield();
-                }
-            } finally {
-                levelProperties.setGeneratorOptions(originalOpts);
-            }
-        } finally {
-            SafeFiles.tryHardToDeleteDir(tempDir);
-        }
-    }
-
-    private GeneratorOptions replaceSeed(ServerWorld originalWorld, long seed, GeneratorOptions originalOpts) {
-        RegistryReadingOps<NbtElement> nbtRegReadOps = RegistryReadingOps.of(
-            NbtOps.INSTANCE,
-            originalWorld.getServer().getRegistryManager()
-        );
-        RegistryOps<NbtElement> nbtRegOps = RegistryOps.method_36574(
-            NbtOps.INSTANCE,
-            ((ExtendedMinecraftServer) originalWorld.getServer())
-                .getServerResourceManager().getResourceManager(),
-            originalWorld.getServer().getRegistryManager()
-        );
-        return GeneratorOptions.CODEC
-            .encodeStart(nbtRegReadOps, originalOpts)
-            .flatMap(tag ->
-                GeneratorOptions.CODEC.parse(
-                    recursivelySetSeed(new Dynamic<>(nbtRegOps, tag), seed, new HashSet<>())
-                )
-            )
-            .get()
-            .map(
-                l -> l,
-                error -> {
-                    throw new IllegalStateException("Unable to map GeneratorOptions: " + error.message());
-                }
-            );
-    }
-
-    @SuppressWarnings("unchecked")
-    private Dynamic<NbtElement> recursivelySetSeed(Dynamic<NbtElement> dynamic, long seed, Set<Dynamic<NbtElement>> seen) {
-        if (!seen.add(dynamic)) {
-            return dynamic;
-        }
-        return dynamic.updateMapValues(pair -> {
-            if (pair.getFirst().asString("").equals("seed")) {
-                return pair.mapSecond(v -> v.createLong(seed));
-            }
-            if (pair.getSecond().getValue() instanceof net.minecraft.nbt.NbtCompound) {
-                return pair.mapSecond(v -> recursivelySetSeed((Dynamic<NbtElement>) v, seed, seen));
-            }
-            return pair;
-        });
-    }
-
-    private void regenForWorld(Region region, Extent extent, ServerWorld serverWorld,
-                               RegenOptions options) throws WorldEditException {
-        List<CompletableFuture<Chunk>> chunkLoadings = submitChunkLoadTasks(region, serverWorld);
-
-        // drive executor until loading finishes
-        ((AccessorServerChunkManager) serverWorld.getChunkManager()).getMainThreadExecutor()
-            .runTasks(() -> {
-                // bail out early if a future fails
-                if (chunkLoadings.stream().anyMatch(ftr ->
-                    ftr.isDone() && Futures.getUnchecked(ftr) == null
-                )) {
-                    return false;
-                }
-                return chunkLoadings.stream().allMatch(CompletableFuture::isDone);
-            });
-
-        Map<ChunkPos, Chunk> chunks = new HashMap<>();
-        for (CompletableFuture<Chunk> future : chunkLoadings) {
-            @Nullable
-            Chunk chunk = future.getNow(null);
-            checkState(chunk != null, "Failed to generate a chunk, regen failed.");
-            chunks.put(chunk.getPos(), chunk);
-        }
-
-        for (BlockVector3 vec : region) {
-            BlockPos pos = FabricAdapter.toBlockPos(vec);
-            Chunk chunk = chunks.get(new ChunkPos(pos));
-            BlockStateHolder<?> state = FabricAdapter.adapt(chunk.getBlockState(pos));
-            BlockEntity blockEntity = chunk.getBlockEntity(pos);
-            if (blockEntity != null) {
-                net.minecraft.nbt.NbtCompound tag = new net.minecraft.nbt.NbtCompound();
-                blockEntity.writeNbt(tag);
-                state = state.toBaseBlock(NBTConverter.fromNative(tag));
-            }
-            extent.setBlock(vec, state.toBaseBlock());
-
-            if (options.shouldRegenBiomes()) {
-                BiomeType biome = getBiomeInChunk(vec, chunk);
-                extent.setBiome(vec, biome);
-            }
-        }
     }
 
     private List<CompletableFuture<Chunk>> submitChunkLoadTasks(Region region, ServerWorld world) {
@@ -467,25 +330,23 @@ public class FabricWorld extends AbstractWorld {
     private static ConfiguredFeature<?, ?> createTreeFeatureGenerator(TreeType type) {
         switch (type) {
             // Based off of the SaplingGenerator class, as well as uses of DefaultBiomeFeatures fields
-            case TREE: return ConfiguredFeatures.OAK;
-            case BIG_TREE: return ConfiguredFeatures.FANCY_OAK;
-            case REDWOOD: return ConfiguredFeatures.SPRUCE;
-            case TALL_REDWOOD: return ConfiguredFeatures.MEGA_SPRUCE;
-            case MEGA_REDWOOD: return ConfiguredFeatures.MEGA_PINE;
-            case BIRCH: return ConfiguredFeatures.BIRCH;
-            case JUNGLE: return ConfiguredFeatures.MEGA_JUNGLE_TREE;
-            case SMALL_JUNGLE: return ConfiguredFeatures.JUNGLE_TREE;
-            case SHORT_JUNGLE: return ConfiguredFeatures.JUNGLE_TREE_NO_VINE;
-            case JUNGLE_BUSH: return ConfiguredFeatures.JUNGLE_BUSH;
-            case SWAMP: return ConfiguredFeatures.SWAMP_OAK;
-            case ACACIA: return ConfiguredFeatures.ACACIA;
-            case DARK_OAK: return ConfiguredFeatures.DARK_OAK;
-            case TALL_BIRCH: return ConfiguredFeatures.SUPER_BIRCH_BEES_0002;
-            case RED_MUSHROOM: return ConfiguredFeatures.HUGE_RED_MUSHROOM;
-            case BROWN_MUSHROOM: return ConfiguredFeatures.HUGE_BROWN_MUSHROOM;
-            case WARPED_FUNGUS: return ConfiguredFeatures.WARPED_FUNGI;
-            case CRIMSON_FUNGUS: return ConfiguredFeatures.CRIMSON_FUNGI;
-            case CHORUS_PLANT: return ConfiguredFeatures.CHORUS_PLANT;
+            case TREE: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.OAK_TREE_CONFIG);
+            case BIG_TREE: return Feature.FANCY_TREE.configure(DefaultBiomeFeatures.FANCY_TREE_CONFIG);
+            case REDWOOD: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.SPRUCE_TREE_CONFIG);
+            case TALL_REDWOOD: return Feature.MEGA_SPRUCE_TREE.configure(DefaultBiomeFeatures.MEGA_SPRUCE_TREE_CONFIG);
+            case MEGA_REDWOOD: return Feature.MEGA_SPRUCE_TREE.configure(DefaultBiomeFeatures.MEGA_PINE_TREE_CONFIG);
+            case BIRCH: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.BIRCH_TREE_CONFIG);
+            case JUNGLE: return Feature.MEGA_JUNGLE_TREE.configure(DefaultBiomeFeatures.MEGA_JUNGLE_TREE_CONFIG);
+            case SMALL_JUNGLE: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.JUNGLE_TREE_CONFIG);
+            case SHORT_JUNGLE: return new OakTreeFeature(BranchedTreeFeatureConfig::deserialize)
+                    .configure(DefaultBiomeFeatures.JUNGLE_SAPLING_TREE_CONFIG);
+            case JUNGLE_BUSH: return Feature.JUNGLE_GROUND_BUSH.configure(DefaultBiomeFeatures.JUNGLE_GROUND_BUSH_CONFIG);
+            case SWAMP: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.SWAMP_TREE_CONFIG);
+            case ACACIA: return Feature.ACACIA_TREE.configure(DefaultBiomeFeatures.ACACIA_TREE_CONFIG);
+            case DARK_OAK: return Feature.DARK_OAK_TREE.configure(DefaultBiomeFeatures.DARK_OAK_TREE_CONFIG);
+            case TALL_BIRCH: return Feature.NORMAL_TREE.configure(DefaultBiomeFeatures.LARGE_BIRCH_TREE_CONFIG);
+            case RED_MUSHROOM: return Feature.HUGE_RED_MUSHROOM.configure(DefaultBiomeFeatures.HUGE_RED_MUSHROOM_CONFIG);
+            case BROWN_MUSHROOM: return Feature.HUGE_BROWN_MUSHROOM.configure(DefaultBiomeFeatures.HUGE_BROWN_MUSHROOM_CONFIG);
             case RANDOM: return createTreeFeatureGenerator(TreeType.values()[ThreadLocalRandom.current().nextInt(TreeType.values().length)]);
             default:
                 return null;
@@ -517,22 +378,21 @@ public class FabricWorld extends AbstractWorld {
     public void fixLighting(Iterable<BlockVector2> chunks) {
         World world = getWorld();
         for (BlockVector2 chunk : chunks) {
-            world.getChunkManager().getLightingProvider().setColumnEnabled(
-                new ChunkPos(chunk.getBlockX(), chunk.getBlockZ()), true
+            world.getChunkManager().getLightingProvider().setLightEnabled(
+                    new ChunkPos(chunk.getBlockX(), chunk.getBlockZ()), true
             );
         }
     }
 
     @Override
     public boolean playEffect(Vector3 position, int type, int data) {
-        // TODO update sound API
-        // getWorld().playSound(type, FabricAdapter.toBlockPos(position.toBlockPoint()), data);
+        getWorld().playLevelEvent(type, FabricAdapter.toBlockPos(position.toBlockPoint()), data);
         return true;
     }
 
     @Override
     public WeatherType getWeather() {
-        WorldProperties info = getWorld().getLevelProperties();
+        LevelProperties info = getWorld().getLevelProperties();
         if (info.isThundering()) {
             return WeatherTypes.THUNDER_STORM;
         }
@@ -544,7 +404,7 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public long getRemainingWeatherDuration() {
-        ServerWorldProperties info = (ServerWorldProperties) getWorld().getLevelProperties();
+        LevelProperties info = getWorld().getLevelProperties();
         if (info.isThundering()) {
             return info.getThunderTime();
         }
@@ -561,7 +421,7 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public void setWeather(WeatherType weatherType, long duration) {
-        ServerWorldProperties info = (ServerWorldProperties) getWorld().getLevelProperties();
+        LevelProperties info = getWorld().getLevelProperties();
         if (weatherType == WeatherTypes.THUNDER_STORM) {
             info.setClearWeatherTime(0);
             info.setThundering(true);
@@ -579,22 +439,17 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public int getMinY() {
-        return getWorld().getBottomY();
+        return 0;
     }
 
     @Override
     public int getMaxY() {
-        return getWorld().getTopY() - 1;
+        return getWorld().getHeight() - 1;
     }
 
     @Override
     public BlockVector3 getSpawnPosition() {
-        WorldProperties worldProps = getWorld().getLevelProperties();
-        return BlockVector3.at(
-            worldProps.getSpawnX(),
-            worldProps.getSpawnY(),
-            worldProps.getSpawnZ()
-        );
+        return FabricAdapter.adapt(getWorld().getSpawnPos());
     }
 
     @Override
@@ -613,8 +468,8 @@ public class FabricWorld extends AbstractWorld {
         BlockEntity tile = ((WorldChunk) getWorld().getChunk(pos)).getBlockEntity(pos, WorldChunk.CreationType.CHECK);
 
         if (tile != null) {
-            net.minecraft.nbt.NbtCompound tag = new net.minecraft.nbt.NbtCompound();
-            tile.writeNbt(tag);
+            net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+            tile.toTag(tag);
             return getBlock(position).toBaseBlock(NBTConverter.fromNative(tag));
         } else {
             return getBlock(position).toBaseBlock();
@@ -643,18 +498,13 @@ public class FabricWorld extends AbstractWorld {
     @Override
     public List<? extends Entity> getEntities(Region region) {
         final World world = getWorld();
-        Box box = new Box(
-            FabricAdapter.toBlockPos(region.getMinimumPoint()),
-            FabricAdapter.toBlockPos(region.getMaximumPoint().add(BlockVector3.ONE))
-        );
-        List<net.minecraft.entity.Entity> nmsEntities = world.getOtherEntities(
-            null,
-            box,
-            e -> region.contains(FabricAdapter.adapt(e.getBlockPos()))
-        );
-        return nmsEntities.stream()
-            .map(FabricEntity::new)
-            .collect(ImmutableList.toImmutableList());
+        if (!(world instanceof ServerWorld)) {
+            return Collections.emptyList();
+        }
+        return ((ServerWorld) world).getEntities(null, entity -> true)
+                .stream()
+                .filter(e -> region.contains(FabricAdapter.adapt(e.getBlockPos())))
+                .map(FabricEntity::new).collect(Collectors.toList());
     }
 
     @Override
@@ -663,9 +513,10 @@ public class FabricWorld extends AbstractWorld {
         if (!(world instanceof ServerWorld)) {
             return Collections.emptyList();
         }
-        return Streams.stream(((ServerWorld) world).iterateEntities())
-            .map(FabricEntity::new)
-            .collect(ImmutableList.toImmutableList());
+        return ((ServerWorld) world).getEntities(null, entity -> true)
+                .stream()
+                .map(FabricEntity::new)
+                .collect(Collectors.toList());
     }
 
     @Nullable
@@ -673,18 +524,16 @@ public class FabricWorld extends AbstractWorld {
     public Entity createEntity(Location location, BaseEntity entity) {
         World world = getWorld();
         final Optional<EntityType<?>> entityType = EntityType.get(entity.getType().getId());
-        if (!entityType.isPresent()) {
-            return null;
-        }
+        if (!entityType.isPresent()) return null;
         net.minecraft.entity.Entity createdEntity = entityType.get().create(world);
         if (createdEntity != null) {
             CompoundTag nativeTag = entity.getNbtData();
             if (nativeTag != null) {
-                net.minecraft.nbt.NbtCompound tag = NBTConverter.toNative(entity.getNbtData());
+                net.minecraft.nbt.CompoundTag tag = NBTConverter.toNative(entity.getNbtData());
                 for (String name : Constants.NO_COPY_ENTITY_NBT_FIELDS) {
                     tag.remove(name);
                 }
-                createdEntity.readNbt(tag);
+                createdEntity.fromTag(tag);
             }
 
             createdEntity.updatePositionAndAngles(location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch());
@@ -693,6 +542,20 @@ public class FabricWorld extends AbstractWorld {
             return new FabricEntity(createdEntity);
         } else {
             return null;
+        }
+    }
+
+    private static class NoOpChunkStatusListener implements WorldGenerationProgressListener {
+        @Override
+        public void start(ChunkPos chunkPos) {
+        }
+
+        @Override
+        public void setChunkStatus(ChunkPos chunkPos, @Nullable ChunkStatus chunkStatus) {
+        }
+
+        @Override
+        public void stop() {
         }
     }
 

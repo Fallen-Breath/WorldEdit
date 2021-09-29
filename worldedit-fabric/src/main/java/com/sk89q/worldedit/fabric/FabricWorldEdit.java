@@ -206,18 +206,18 @@ public class FabricWorldEdit implements ModInitializer {
             }
         }
         // Biomes
-        for (Identifier name : server.getRegistryManager().get(Registry.BIOME_KEY).getIds()) {
+        for (Identifier name : Registry.BIOME.getIds()) {
             if (BiomeType.REGISTRY.get(name.toString()) == null) {
                 BiomeType.REGISTRY.register(name.toString(), new BiomeType(name.toString()));
             }
         }
         // Tags
-        for (Identifier name : BlockTags.getTagGroup().getTagIds()) {
+        for (Identifier name : BlockTags.getContainer().getKeys()) {
             if (BlockCategory.REGISTRY.get(name.toString()) == null) {
                 BlockCategory.REGISTRY.register(name.toString(), new BlockCategory(name.toString()));
             }
         }
-        for (Identifier name : ItemTags.getTagGroup().getTagIds()) {
+        for (Identifier name : ItemTags.getContainer().getKeys()) {
             if (ItemCategory.REGISTRY.get(name.toString()) == null) {
                 ItemCategory.REGISTRY.register(name.toString(), new ItemCategory(name.toString()));
             }

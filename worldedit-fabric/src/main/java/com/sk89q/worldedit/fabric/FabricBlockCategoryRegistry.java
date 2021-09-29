@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class FabricBlockCategoryRegistry implements BlockCategoryRegistry {
     @Override
     public Set<BlockType> getCategorisedByName(String category) {
-        return Optional.ofNullable(BlockTags.getTagGroup().getTag(new Identifier(category)))
+        return Optional.ofNullable(BlockTags.getContainer().get(new Identifier(category)))
             .map(Tag::values)
             .orElse(Collections.emptyList())
             .stream()

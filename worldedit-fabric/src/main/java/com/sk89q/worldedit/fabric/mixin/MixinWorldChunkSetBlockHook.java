@@ -20,6 +20,7 @@
 package com.sk89q.worldedit.fabric.mixin;
 
 import com.sk89q.worldedit.fabric.internal.ExtendedChunk;
+import com.sk89q.worldedit.fabric.internal.OnBlockAddedHelper;
 import net.minecraft.block.BlockState;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
@@ -28,14 +29,17 @@ import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.WorldChunk;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.Slice;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import javax.annotation.Nullable;
 
 @Mixin(WorldChunk.class)
 public abstract class MixinWorldChunkSetBlockHook implements Chunk, ExtendedChunk {
+
+    @Shadow @Final private World world;
     private boolean shouldUpdate = true;
 
     @Nullable
@@ -51,14 +55,11 @@ public abstract class MixinWorldChunkSetBlockHook implements Chunk, ExtendedChun
         }
     }
 
-    @Redirect(
-        method = "setBlockState",
-        slice = @Slice(
-            from = @At(value = "INVOKE", target = "Lnet/minecraft/block/AbstractBlock$AbstractBlockState;isOf(Lnet/minecraft/block/Block;)Z")
-        ),
+    @Inject(
+        method = "setBlockState", require = 0,
         at = @At(value = "INVOKE", target = "Lnet/minecraft/block/BlockState;onBlockAdded(Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;Z)V", ordinal = 0)
     )
-    public void setBlockStateHook(BlockState target, World world, BlockPos pos, BlockState old, boolean move) {
+    public void setBlockStateHook(CallbackInfoReturnable<BlockState> cir) {
         boolean localShouldUpdate;
         MinecraftServer server = world.getServer();
         if (server == null || Thread.currentThread() != server.getThread()) {
@@ -68,8 +69,8 @@ public abstract class MixinWorldChunkSetBlockHook implements Chunk, ExtendedChun
         } else {
             localShouldUpdate = shouldUpdate;
         }
-        if (localShouldUpdate) {
-            target.onBlockAdded(world, pos, old, move);
+        if (!localShouldUpdate) {
+            OnBlockAddedHelper.DISABLED_FLAG.set(true);
         }
     }
 }
