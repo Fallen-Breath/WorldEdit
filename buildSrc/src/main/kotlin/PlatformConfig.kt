@@ -32,7 +32,7 @@ fun Project.applyPlatformAndCoreConfiguration() {
     apply(plugin = "eclipse")
     apply(plugin = "idea")
     apply(plugin = "maven-publish")
-    apply(plugin = "checkstyle")
+//    apply(plugin = "checkstyle")
     apply(plugin = "com.jfrog.artifactory")
 
     ext["internalVersion"] = "$version+${rootProject.ext["gitCommitHash"]}"
@@ -51,10 +51,10 @@ fun Project.applyPlatformAndCoreConfiguration() {
             options.compilerArgs.add("-parameters")
         }
 
-    configure<CheckstyleExtension> {
-        configFile = rootProject.file("config/checkstyle/checkstyle.xml")
-        toolVersion = "8.34"
-    }
+//    configure<CheckstyleExtension> {
+//        configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+//        toolVersion = "8.34"
+//    }
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
@@ -101,7 +101,7 @@ fun Project.applyPlatformAndCoreConfiguration() {
     }
 
     tasks.named("check").configure {
-        dependsOn("checkstyleMain", "checkstyleTest")
+//        dependsOn("checkstyleMain", "checkstyleTest")
     }
 
     configure<PublishingExtension> {

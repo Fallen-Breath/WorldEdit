@@ -91,9 +91,9 @@ configure<LicenseExtension> {
         it.file.startsWith(project.buildDir)
     }
 }
-tasks.withType<Checkstyle>().configureEach {
-    exclude("com/sk89q/worldedit/antlr/**/*.java")
-}
+//tasks.withType<Checkstyle>().configureEach {
+//    exclude("com/sk89q/worldedit/antlr/**/*.java")
+//}
 
 // Give intellij info about where ANTLR code comes from
 plugins.withId("idea") {
