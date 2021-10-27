@@ -141,6 +141,10 @@ tasks.named<ShadowJar>("shadowJar") {
         relocate("org.antlr.v4", "com.sk89q.worldedit.antlr4")
 
         include(dependency("org.antlr:antlr4-runtime"))
+        include(dependency("org.mozilla:rhino-runtime"))
+    }
+    minimize {
+        exclude(dependency("org.mozilla:rhino-runtime"))
     }
 }
 
